@@ -1,0 +1,1015 @@
+#!/usr/bin/env python
+# encoding: utf-8
+from __future__ import print_function
+
+# https://stackoverflow.com/questions/18862836/how-to-open-file-using-argparse#18863046
+
+# Style Guideline for Python Code [PEP 8]
+# https://www.python.org/dev/peps/pep-0008/
+
+
+# `python -m pip install requests`
+# indirectly installs: certifi chardet idna requests urllib3
+
+import os
+import shutil
+import subprocess
+import sys
+import time
+try:
+  import requests
+except:
+  print('requests module not found, from a command-line shell, try:')
+  sys.exit('python -m pip install requests')
+try:
+  import imageio
+except:
+  print('imageio module not found, from a command-line shell, try:')
+  sys.exit('python -m pip install imageio')
+
+# from regutil import *
+# from fileutil import *
+
+GIF_NINDEX        = '20'
+GIF_NFRAME        = '10'
+GIF_SIZE          = '320x240'
+GIF_FPSX          = '0.5'
+
+# where we want to download ffmpeg
+BASE_FFMPEG_PATH  = r'C:\DEV\avcvt-utils'
+BIN_FFMPEG_PATH   = r'C:\DEV\avcvt-utils\ffmpeg-20180508-293a6e8-win64-static\bin'
+
+BIN_ATOMICPARSLEY = r'C:\Users\xo\Desktop\youtube-dl-win\bin'
+FFMPEG_ZERANOE    = 'https://ffmpeg.zeranoe.com/builds/{}/{}'
+FFMPEG_LATEST_WIN = 'https://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-latest-win64-static.zip'
+
+# win64|win32, static|shared
+FFMPEG_ZERANOE_TABLE = 'https://ffmpeg.zeranoe.com/builds/{}/{}/ffmpeg-latest-{}-{}.zip'
+
+
+os.environ.update({'PATH': os.environ['PATH']+';'+BIN_FFMPEG_PATH})
+os.environ.update({'PATH': os.environ['PATH']+';'+BIN_ATOMICPARSLEY})
+
+VERBOSE   = False
+# this is primarily for windows.
+# by default, we want to use id3 v2.3
+ID3V2     = 3
+
+# Tells the script to overwrite downloaded files if they exist
+
+'''
+__refresh__ and __keep_archives__ are two variables which are separated
+in that one of them can be set during a function call (perhaps) while the
+other may be globally set using a command-line flag (in another script).
+'''
+
+from tarutil import *
+# used in tarutil...
+# __refresh__ = True # A value of True tells us to destroy prior dowload archives.
+# __keep_archives__ = True
+# __original_path__ = os.path.abspath('.')
+from fileutil import *
+
+
+class dictify:
+  def __init__(self,obj):
+    self.__dict__ = obj
+
+class util:
+  # MEDIA_EXT = ['mp3', 'm4a', 'avi', 'ogg', 'flac']
+  MEDIA_EXT = ['.mp3', '.m4a', '.mp4', '.avi', '.mpg']
+  IMAGE_EXT = ['.jpg', '.png']
+  
+  @staticmethod
+  def recall(args: list, stdin=None, stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ):
+    '''
+    returns:
+      (return_code, std_output, std_error)
+    '''
+    import subprocess
+    p = subprocess.Popen(args, stdin=stdin, stderr=stderr, stdout=stdout, env=env)
+    output, error = p.communicate()
+    returncode = p.returncode
+    if output != None: output = output.decode('utf-8')
+    if error  != None: error = error.decode('utf-8')
+    return returncode, output, error
+
+  @staticmethod
+  def simon(*message, is_cmd=False):
+    '''prints to `sys.stderr`'''
+    if is_cmd == False: print(' '.join(message), file=sys.stderr)
+    else:
+      ray = []
+      fmt = "'{}'"
+      for msg in message:
+        if msg.find(' ') >= 0: ray.append(fmt.format(msg))
+        elif msg.find(':') >= 0:
+          ray.append(fmt.format(msg))
+        else: ray.append(msg)
+      
+      print('length: {}'.format(len(ray)), file=sys.stderr)
+      print(' '.join(ray), file=sys.stderr)
+    # sys.stderr.write('\n')
+  # our data model, built around `mock_down` data (URLs)
+
+  @staticmethod
+  def str2ple(str_in):
+    
+    size_s  = str_in.split('x')
+    if not len(size_s) == 2: raise Exception('Expected a value such as 640x480 where the x must be present separating the nums.')
+    return int(size_s[0]), int(size_s[1])
+  
+  @staticmethod
+  def quote(input): return "'{}'".format(input)
+  
+  @staticmethod
+  def quoted(input): return '"{}"'.format(input)
+
+  @staticmethod
+  def rreplace(haystack:str, needle:str, replace:str):
+    '''
+    Replace using Regular Expressions
+
+    param: haystack
+    	our input
+    param: needle
+    	text to search for
+    param: replace
+    	replacement text
+    return:
+    	string result
+    '''
+    import re
+    rex = re.compile(re.escape(needle), re.IGNORECASE)
+    return rex.sub(replace, haystack)
+
+  @staticmethod
+  def ext_new(input, new_ext):
+    '''
+    Gee THANKS Wally!!
+    WTF DOES IT DO?
+
+    param: input
+    	input file path
+    param: new_ext
+    	the new file extension to apply
+    '''
+    return util.rreplace(input, util.ext_get(input), new_ext)
+
+  @staticmethod
+  def cover_jpg(input): return util.ext_new(input, '-cover.jpg')
+
+  @staticmethod
+  def cover_png(input): return util.ext_new(input, '-cover.png')
+
+  @staticmethod
+  def ext_get(input:str):
+    '''get the file's actual extension'''
+    index = input.rfind('.')
+    if index == -1:
+      raise Exception('ERR> No file extension found {}'.format(
+        os.path.basename(input)))
+    return input[index:]
+
+  # depends on MEDIA_EXT variable
+  @staticmethod
+  def ext_gets(input:str):
+    '''
+    get supported extension.
+
+    param: input
+    	input file path
+    return:
+    	extension if its contained in the list of acceptable
+    	extensions (MEDIA_EXT)
+    '''
+    filei = str(input).lower()
+    for ext in util.MEDIA_EXT:
+      if filei.endswith(ext): return ext
+    return None
+
+  @staticmethod
+  def cmd(input):
+    '''
+    return:
+    	list - of args to execute
+    '''
+    return input.split(' ')
+
+# note that simon is now util.simon()
+# simon('==> Sys: {}'.format(sys.platform))
+
+# FFmpeg downloads list
+def download_table(URL=FFMPEG_ZERANOE, win64=True, static=True, dev=False):
+  '''
+  for now we'll support static|shared, win64|win32.
+
+  [dev isn't implemented here] if dev is true, overrides the static setting
+  '''
+  plat = 'win64' if win64 == True else 'win32'
+  conf = 'dev' if dev == True else 'static' if static == True else 'shared'
+  dl_url = URL.format(plat, conf, plat, conf)
+  util.simon('- Your url: {}'.format(dl_url))
+  os.chdir(BASE_FFMPEG_PATH)
+  dl = nurl(dl_url)
+  dl.get_file()
+  # dl.
+  # download(URL,False)
+
+# taylored to FFmpeg download
+def download_ff(URL=FFMPEG_ZERANOE_TABLE, win64=True, static=True, dev=False):
+  '''
+  for now we'll support static|shared, win64|win32.
+
+  [dev isn't implemented here] if dev is true, overrides the static setting
+  '''
+  plat = 'win64' if win64 == True else 'win32'
+  conf = 'dev' if dev == True else 'static' if static == True else 'shared'
+  dl_url = URL.format(plat, conf, plat, conf)
+  util.simon('- Your url: {}'.format(dl_url))
+  os.chdir(BASE_FFMPEG_PATH)
+  # download(URL, False)
+  dl = nurl(dl_url)
+  dl.get_file()
+
+
+def find_gif(dir_root:str, extension:str='.gif'):
+
+  util.simon(dir_root, extension)
+  mylist = []
+  Util.of_ext(mylist, m_dir=dir_root, m_ext=extension)
+  util.simon('found {} items'.format(len(mylist)))
+  for item in mylist: print ('- {}'.format(item))
+  return mylist
+
+# since the script(s) can generate messes of GIF files...
+def find_gifs(dir_root:str):
+  find_gif(dir_root)
+
+class MediaFile:
+
+  TGTFILE=None
+  TMPFILE=None
+  IMGFILE=None
+  METFILE=None
+  GIFFILE=None
+
+  EXT  = None # actual extension
+  EXTS = None # supported extension
+
+  @staticmethod
+  def get_ratio(size):
+    width, height = size[0], size[1] if size[0] <= size[1] else size[1], size[0]
+    return width / height
+
+  def clean(self):
+    if self.has_image(): self.remove_image()
+    if self.has_metadata(): self.remove_meta()
+  #
+  def is_mp3(self): return self.EXT.lower() == '.mp3'
+  def is_m4a(self): return self.EXT.lower() == '.m4a'
+  def is_mp4(self): return self.EXT.lower() == '.mp4'
+  def is_cover_supported(self):
+    return self.is_mp3 or self.is_m4a() or self.is_mp4()
+  #
+  def backup(self):
+    '''
+    copy our file to [file-old.ext] --- that's all.
+    if we have both temp file and media, delete temp file.
+    '''
+    has_temp = os.path.exists(self.TMPFILE)
+    has_media = os.path.exists(self.TGTFILE)
+
+    if has_temp and has_media:
+      os.unlink(self.TMPFILE)
+      os.rename(self.TGTFILE, self.TMPFILE)
+    elif has_media and (not has_temp):
+      os.rename(self.TGTFILE, self.TMPFILE)
+    
+    time.sleep(1)
+  #
+  def restore(self):
+    # first copy our file to temp
+    if self.has_tempfile():
+      if self.has_media(): self.remove_target()
+      util.simon('=> RESTORE BACKUP (TEMP FILE)')
+      shutil.move(self.TMPFILE, self.TGTFILE)
+  # 
+  def remove(self, file, name, quit=True):
+    util.simon()
+    if os.path.exists(file):
+      if VERBOSE: util.simon('==> DELETE {} FILE : {}'.format(name,file))
+      os.unlink(file)
+    else:
+      msg = '--> <ERR> {} FILE not found'.format(name)
+      if quit: sys.exit('{};'.format(msg), "EXITING")
+      elif VERBOSE: util.simon(msg); return
+  # 
+  def remove_temp(self, quit=False):   self.remove(self.TMPFILE, 'TEMP', quit=quit)
+  def remove_meta(self, quit=False):   self.remove(self.METFILE, 'METADATA', quit=quit)
+  def remove_image(self, quit=False):  self.remove(self.IMGFILE, 'IMAGE', quit=quit)
+  def remove_target(self, quit=False): self.remove(self.TGTFILE, 'MEDIA', quit=quit)
+  # 
+  def has_metadata(self, quit=False, zero_check=True, msg="NO METADATA FILE"):
+    '''return: True if 'has-file' or throws sys.exit(msg)'''
+    err = self.has_file(self.METFILE, larger_than=-1 if zero_check else 0)
+    if (err == False) and quit: sys.exit('==> <ERR> {}'.format(msg))
+    elif (err == False) and VERBOSE: util.simon('==> [{}]'.format(msg))
+    return err
+  # 
+  def has_tempfile(self, quit=False, zero_check=True, msg = "NO TEMP FILE"):
+    '''return: True if 'has-file' or throws sys.exit(msg)'''
+    err = self.has_file(self.TMPFILE, larger_than=-1 if zero_check else 0)
+    if (err == False) and quit: sys.exit('==> <ERR> {}'.format(msg))
+    elif (err == False) and VERBOSE: util.simon('==> [{}]'.format(msg))
+    return err
+  # 
+  def has_media(self, quit=False, zero_check=True, msg = "NO MEDIA FILE"):
+    '''return: True if 'has-file' or throws sys.exit(msg)'''
+    err = self.has_file(self.TGTFILE, larger_than=-1 if zero_check else 0)
+    if (err == False) and quit: sys.exit('==> <ERR> {}'.format(msg))
+    elif (err == False) and VERBOSE: util.simon('==> [{}]'.format(msg))
+    return err
+  # 
+  def has_image(self, quit=False, zero_check=True, msg = "NO IMAGE FILE"):
+    '''return: True if 'has-file' or throws sys.exit(msg)'''
+    err = self.has_file(self.IMGFILE, larger_than=-1 if zero_check else 0)
+    if (err == False) and quit: sys.exit('==> <ERR> {}'.format(msg))
+    elif (err == False) and VERBOSE: util.simon('==> [{}]'.format(msg))
+    return err
+  # 
+  def has_file(self, file, larger_than=0):
+    '''
+    set `larger_than` to -1 to skip the size-check.
+
+    returns True if the file exists and is larger than 0 bytes.
+    '''
+    has_file = os.path.exists(file)
+    has_size = False
+    size = -1
+    if (larger_than != -1) and has_file:
+      size = os.path.getsize(file)
+      has_size = size > larger_than
+    ext = self.EXT if not has_file else util.ext_get(file)
+    if VERBOSE: print('==> [{}] file-exist: {}, size: {}:{}'.format(ext,has_file,has_size,size))
+    if larger_than == -1: return has_file
+    return has_file and has_size
+  # 
+  def __init__(self, input):
+    self.TGTFILE = pathutil.clean_path(input) #.replace('E:/','/e/')
+    self.EXTS    = util.ext_gets(self.TGTFILE)
+    self.EXT     = util.ext_get(self.TGTFILE)
+    if self.EXT  == None: raise Exception('<ERR> File has no extension!')
+    if self.EXTS == None: raise Exception('<ERR> Unsupported file-extension')
+    self.TMPFILE = util.ext_new(self.TGTFILE, '-old{}'.format(self.EXT))
+    self.METFILE = util.ext_new(self.TGTFILE, '{}.md'.format(self.EXT)) # why not?
+    self.IMGFILE = util.cover_png(self.TGTFILE)
+    self.GIFFILE = self.TGTFILE.replace(self.EXT, '.gif')
+    if VERBOSE:
+      print('IMG        ', os.path.basename(self.IMGFILE))
+      print('TEMP       ', os.path.basename(self.TMPFILE))
+      print('TARGET     ', os.path.basename(self.TGTFILE))
+      print('METADATA   ', os.path.basename(self.METFILE))
+
+class FFmpeg(MediaFile):
+  #
+  def run(self, command:list, msg:str=None, surpress:bool=False):
+    '''
+    executes a command.
+
+    Returns (first tuple parameter) True on FAIL, False on SUCCESS.
+
+    return:
+    	([success:bool], [std-output:str], [std-error])
+    '''
+    # if (msg != None) and VERBOSE: util.simon('==> {}'.format(msg))
+
+    util.simon('==> {} (BEGIN)'.format(msg))
+    if surpress: rc, so, se = util.recall(command, stderr=None, stdout=None)
+    else: rc, so, se = util.recall(command)
+    
+    util.simon('<== {} (COMPLETE)'.format(msg))
+
+    if rc == 0:
+      if VERBOSE: util.simon('   command completed successfully')
+      return False, so, se
+    else:
+      if VERBOSE: util.simon('   command process failed: {}'.format(se)) # ' '.join(out)
+      return rc, so, se
+  # 
+  def imageio_meta_dic(self, **para):
+    '''
+    arguments...
+
+    param: o_params
+
+        this is used as the `output_params` parameter when creating our reader.
+
+    param: pixelformat
+
+        Also sent to the created reader.  I'm not sure at this point what to send
+        in for grayscale.
+    '''
+    pram = None if not 'o_params' in para else para['o_params']
+    pfmt = 'yuyv422' if not 'pixelformat' in para else para['pixelformat']
+    
+    result={'hi': None}
+
+    with imageio.get_reader(
+      self.TGTFILE,
+      pixelformat=pfmt,
+      output_params=pram) as reader:
+
+      result.update(reader.get_meta_data())
+      reader.close()
+
+    return result
+  # 
+  def calc_frames(self, o_params=None, frame_c=15):
+    '''
+    Calculatie number of frames to skip from a determined frame count `frame_c`.
+    Where `frame_c` is the number of frames that we would like in our GIF.
+
+    We are returning some metadata info along with fs, our frame-skip count.
+
+    returns: (fps, duration, frames, fs)
+    '''
+    # FFmpeg: plugin='ffmpeg', nframes:int, ffmpeg_version:str, fps:float
+    #         source_size:tuple, size:tuple, duration:float
+    result = self.imageio_meta_dic(o_params=o_params)
+    result.update({'fs': int(result['nframes'] / frame_c)})
+    return dictify(result)
+  # 
+  def imageio_gif(self, **parax):
+    '''
+    https://imageio.readthedocs.io/en/stable/format_ffmpeg.html#ffmpeg
+
+    param: frame_c
+      the total number of frame index points
+
+    param: frame_z
+      the number of frames to grab at each index point
+
+    param: size
+      size of the exported GIF window
+
+    param: fps_mul
+      multiplier against framerate.
+      By default we use a value of 0.5 to slow down playback.
+    '''
+
+    import PIL
+    import numpy as np
+
+    frame_c = int(GIF_NINDEX) if not 'frame_c' in parax else parax['frame_c']
+    frame_z = int(GIF_NFRAME) if not 'frame_z' in parax else parax['frame_z']
+    
+    size    = util.str2ple(GIF_SIZE)  if not 'size'    in parax else parax['size']
+
+    fps_mul = float(GIF_FPSX) if not 'fps_mul' in parax else parax['fps_mul']
+    
+    # duration=0.225
+
+    r = self.calc_frames(frame_c=frame_c)
+    
+    util.simon('=> frames:  {}'.format(r.nframes))
+    util.simon('=> fps:     {}'.format(r.fps))
+    util.simon('=> size:    {}'.format(r.size))
+    util.simon('=> skip:    {}'.format(r.fs))
+    util.simon('-----------')
+    util.simon('=> index:   {}'.format(frame_c))
+    util.simon('=> frames:  {}'.format(frame_z))
+    util.simon('=> total:   {}'.format(frame_c * frame_z))
+    util.simon('=> seconds: {}'.format((frame_c * frame_z)/r.fps))
+
+    x_params = None  # ,setpts=N/30/TB # x_params = ['-vf', 'select=\'not(mod(n,{}))\''.format(fs)]  # ,setpts=N/30/TB
+
+    # Gather index points
+    my_range = []
+    for x in range(0, frame_c):
+      my_range.append(int(r.fs * (x + 1)))
+    
+    with imageio.get_reader(self.TGTFILE, output_params=x_params) as reader:
+      with imageio.get_writer(self.GIFFILE, fps=r.fps * fps_mul, mode='I') as writer: # , duration=duration
+        for i, x in enumerate(my_range):
+          
+          if x >= r.nframes: break
+
+          sys.stderr.write('+ index: {:.>3} |'.format(i+1))
+          # img = reader.get_data(x); sys.stderr.write('; GOT')
+          try:
+            z = x-frame_c
+            for y in range(z,z+frame_z):
+              if y >= r.nframes: break
+              m_data = reader.get_data(y)
+              img = PIL.Image.fromarray(m_data, 'RGB')
+              img.thumbnail(size, PIL.Image.LANCZOS)
+              img = np.asarray(img)
+              writer.append_data(img)
+              sys.stderr.write('+')
+              sys.stderr.flush()
+          except Exception as e:
+            raise Exception('EXCEPTION[{}]: {}'.format(y, e))
+            # print('EXCEPTION: {}'.format(e), file=sys.stderr)
+          sys.stderr.write('|\n')
+        writer.close()
+      reader.close()
+  # 
+  def m4a_dump(self):
+    '''ffmpeg -hide_banner -y -i "%~nx1" -vn -c:a copy "%~dpn1.m4a'''
+    util.simon('==> EXTRACT M4A Audio from MP4 Video')
+    
+    # check file extension
+    if self.EXT.lower() != '.mp4':
+      print('We were expecting a \'.mp4\' file.  See `<app> --help`.')
+      return 1, None, "Unexpected file extension; Expecting '.mp4'"
+    
+    M4AFILE = self.TGTFILE.replace(self.EXT, '.m4a')
+    has_met = True
+    has_img = True
+    # dump the cover-image
+    if self.cover_dump() == False:
+      util.simon('==> FAILED; cleanup')
+      if os.path.exists(self.IMGFILE): os.remove(self.IMGFILE)
+      has_img = False
+    
+    er, _, _ = self.metadata_exp()
+    if er == 1:
+      if os.path.exists(self.METFILE): os.remove(self.METFILE)  # remove if exiss
+      has_met = False
+    
+    args = [ 'ffmpeg', '-hide_banner', '-y', '-i', self.TGTFILE ]
+    args_post = [ '-vn', '-c:a', 'copy' ]
+
+    if has_met:
+      args += ['-i', self.METFILE, '-map_metadata', '1']
+    args = args + args_post + [ M4AFILE ]
+
+    rc, _, _ = util.recall(args, stderr=sys.stderr)
+    if rc != 0:
+      util.simon('Couldn\'t create audio file.')
+      util.simon(*args, is_cmd=True)
+    else:
+      util.simon('--> Extracted audio; Importing image...')
+      media = FFmpeg(M4AFILE)
+      if os.path.exists(self.IMGFILE):
+        FFmpeg.cover_atomic_load(media)
+    for M in [self, media]:
+      if os.path.exists(M.METFILE): os.remove(M.METFILE)
+      if os.path.exists(M.IMGFILE): os.remove(M.IMGFILE)
+      if os.path.exists(M.TMPFILE): os.remove(M.TMPFILE)
+  #
+  def cover_png_dump(self, mapping:str='0', clean_on_err:bool=True):
+    '''
+    return: True on error, False on success.
+    '''
+    #import subprocess
+    AV_CMD = ['ffmpeg', '-hide_banner', '-y', '-i', self.TGTFILE, '-c:v', 'copy', '-map', mapping, '--', self.IMGFILE]
+    if VERBOSE: util.simon('=> try to dump png cover image [-map {}]...'.format(mapping))
+    # e = subprocess.call(AV_CMD)
+    rc, _, _ = util.recall(AV_CMD, None, subprocess.PIPE, subprocess.PIPE)
+    if 0 == rc:
+      if VERBOSE: util.simon('--> command completed successfully')
+      return False
+    else:
+      if VERBOSE: util.simon('--> command process failed')
+      if clean_on_err:	self.remove_image()
+      return True
+  # 
+  def cover_m4a_dump(self, clean_on_err:bool=True):
+    '''
+    return: True on error, False on success.
+    '''
+    if not (self.is_m4a or self.is_mp4()):
+      sys.exit("--> <ERR> UNEXPECTED AV-File!")
+
+    err = self.cover_png_dump('0:1')
+    if err == True: self.cover_png_dump('0:2')
+    if (not err) and VERBOSE: util.simon('--> Success')
+    if err and clean_on_err: self.remove_image()
+    return err
+  #
+  def check_ext(self, *against):
+    for ext in against:
+      if ext == self.EXT.lower():
+        return True
+    return False
+  #
+  def frame_dump(self, time_start:str='00:00:05.000', time_duration:str='00:00:01.000', message:str='Extracting Vid Frame as Image.'):
+    return self.run(['ffmpeg', '-hide_banner', '-y',
+                      '-i', self.TGTFILE,
+                      '-r', '1',
+                      '-ss', time_start,
+                      '-t', time_duration,
+                      self.IMGFILE
+                    ],
+                    message)
+  #
+  def cover_dump(self, clean_on_err:bool=True):
+    '''
+    returns True on Success?
+    '''
+    if self.is_cover_supported():
+      util.simon('DUMP COVER (ATTEMPT)')
+      for arg in ['0', '0:0','0:1','0:2','0:3']:
+        if self.cover_png_dump(arg,clean_on_err)==False:
+          return True
+      if (self.has_image() == False) and self.is_mp4():
+        util.simon('Msg: No image found, trying a frame from the video.')
+        self.frame_dump()
+        return True if self.has_image() else False
+    return False
+  # 
+  def cover_atomic_load(self, message:str='IMPORT m4a Cover-art'):
+    '''`AtomicParsley %OLDFILE% --artwork %ARTWORK% -o %NEWFILE%`'''
+    if not self.has_image(): return 2, '', 'No IMAGE! ;)'
+    return self.run(['AtomicParsley', self.TGTFILE, '--artwork', self.IMGFILE, '-W'], message)
+  #
+  def cover_atomic_unload(self, message:str='Unload cover (AtomicParsley)'):
+    if not (self.is_mp4() or self.is_m4a()): util.simon('File not supported.  Only mp4 and m4a are supported for this feature.')
+    rc, out, err = self.run([ 'AtomicParsley', self.TGTFILE, '--artwork', 'REMOVE_ALL' ],message,True)
+    return rc, out, err
+  #
+  def cover_remove_atomic_enima(self, message:str='Unload cover (AtomicParsley) and \'title\'.'):
+    if not (self.is_mp4() or self.is_m4a()): util.simon('File not supported.  Only mp4 and m4a are supported for this feature.')
+    self.backup()
+    result = self.run([ 'AtomicParsley', self.TMPFILE, '-P', '--artwork', 'REMOVE_ALL', '-t', '', '-W' ], message, True)
+    has_tgt, has_tmp = os.path.exists(self.TGTFILE), os.path.exists(self.TMPFILE)
+    if (not has_tgt): print('REVERT'); shutil.move(self.TMPFILE, self.TGTFILE)
+    return result
+  #
+  def cover_dump_atomic(self, message:str='dump cover image (AtomicParsley)'):
+    if not (self.is_mp4() or self.is_m4a()):
+      util.simon('- Expected mpeg input (*.mp4 or *.m4a)')
+      return
+    return self.run(['AtomicParsley', self.TGTFILE, '-E'], message, True)
+  #
+  def cover_mp3_load(self, message:str='IMPORT mp3 Cover-art'):
+    '''`ffmpeg -y -i %OLDFILE% -i %IMGFILE% -c copy -map 0:0 -map 1:0 -id3v2_version 3 -metadata:s:v   "title=Album cover" -metadata:s:v "comment=Cover (Front)" %NEWFILE%`'''
+    if not self.has_image(): return 2, '', 'No IMAGE! ;)'
+    self.backup()
+    AV_CMD = ['ffmpeg', '-hide_banner', '-y',
+              '-i', self.TMPFILE,
+              '-i', self.IMGFILE,
+              '-c', 'copy', '-map', '0:0', '-map', '1:0',
+              '-id3v2_version', str(ID3V2),
+              '-metadata:s:v', 'title=Album cover',
+              '-metadata:s:v', 'comment=Cover (Front)',
+              self.TGTFILE]
+    return self.run(AV_CMD, msg=message)
+  #
+  def cover_load(self):
+    '''
+    IMPORT Cover-art for either m4a or mp3.
+    Indirectly calls `self.cover_mp3_load()` or `self.cover_m4a_load()`.
+    '''
+    
+    if not self.has_image(): return 2, None, 'NO IMAGE TO IMPORT'
+    if self.is_mp3(): return self.cover_mp3_load()
+    elif self.is_m4a() or self.is_mp4: return self.cover_atomic_load()
+    sys.exit('==> <ERR> EXTENSION NOT SUPPORTED (YET?)')
+  #
+  def file_info(self):
+    '''
+    The Command Executed
+    --------------------
+
+    `FFmpeg -hide_banner -i %NEWFILE%`
+    '''
+    AV_COMMAND = ['ffmpeg', '-hide_banner', '-i', self.TGTFILE]
+
+    util.simon('--> TRY show info')
+    if subprocess.call(AV_COMMAND) == 0:
+      if VERBOSE: util.simon('-> command completed successfully')
+      return False
+    else:
+      if VERBOSE: util.simon('-> command process failed: {}'.format(' '.join(AV_COMMAND)))
+      return True
+  #
+  def metadata_exp(self, message='EXPORT Metadata-text'):
+    '''`FFmpeg -y -i [in: target-file] -f ffmetadata [out: metadata-file]`'''
+    AV_CMD = ['ffmpeg', '-hide_banner', '-y', '-i', self.TGTFILE, '-f', 'ffmetadata', self.METFILE]
+    result = self.run(AV_CMD, message)
+    return result
+  #
+  def metadata_add(self, dump_first=True, add_img=True, strip_img=True, message='IMPORT Metadata-info'):
+    '''
+    `ffmpeg -hide_banner -y -i %OLDFILE% -i %METAFILE% -map_metadata 1 -c copy %NEWFILE%`
+    '''
+    if not os.path.exists(self.METFILE): sys.exit('NO METADATA TO IMPORT!')
+    has_img = os.path.exists(self.IMGFILE)
+    has_tgt = os.path.exists(self.TGTFILE)
+
+    # IF NO COVER IMAGE IS FOUND AND MEDIA CONTAINS A COVER-IMAGE, DUMP IT
+    if has_tgt and (not has_img) and dump_first:
+      if self.EXTS.lower() == '.m4a':
+        if (self.cover_m4a_dump()): util.simon('==> DUMPED Metadata-cover image')
+      elif self.EXTS.lower() == '.mp3':
+        if (self.cover_png_dump()): util.simon('==> DUMPED Metadata-cover image')
+
+    has_tgt = os.path.exists(self.TGTFILE)
+
+    if ((self.EXT.lower() == '.m4a') or (self.EXT.lower() == '.mp3')) and has_tgt and strip_img:
+      util.simon("# 2 STRIP Visual Media from M4A or MP3")
+      rc, _, err = self.video_remove()
+      if rc == 1: util.simon(err); sys.exit('==> FAILED')
+    else:
+      util.simon("# 2 STRIP .M4A VISUAL MEDIA; [NO NEED]")
+
+    has_img = self.has_image()
+    has_tgt = os.path.exists(self.TGTFILE)
+
+    result = self.metadata_rem()
+    if result[0] == 1: util.simon(err); sys.exit('==> FAILED')
+    
+    self.backup()
+    AV_CMD = ['ffmpeg', '-hide_banner', '-y',
+              '-i', self.TMPFILE,
+              '-i', self.METFILE,
+              '-map_metadata', '1',
+              '-c', 'copy', self.TGTFILE]
+    
+    result = self.run(AV_CMD, message)
+    if result[0] == 1: sys.exit('FAILED')
+    
+    if self.has_image() and self.is_cover_supported() and add_img:
+      util.simon("# 5 IMPORT (FOUND) COVER")
+      rc, _, err = self.cover_load()
+      if rc == 1:
+        util.simon('==> <FFmpeg ERR>')
+        sys.exit(err)
+      elif rc == 2:
+        util.simon(err)
+    if self.has_tempfile(): self.remove_temp()
+    return result
+  #
+  def metadata_rem(self, message='STRIP Metadata'):
+    '''
+    `ffmpeg -hide_banner -y -i %OLDFILE% -c copy -map_metadata -1 -map_chapters -1 %NEWFILE%`
+
+    This removes chapter data and metadata; not embedded cover-art.
+    '''
+    self.backup()
+    AV_CMD = ['ffmpeg', '-hide_banner', '-y',
+              '-i', self.TMPFILE,
+              '-c', 'copy',
+              '-map_metadata', '-1',
+              '-map_chapters', '-1',
+              self.TGTFILE]
+    result = self.run(AV_CMD, message)
+    return result
+  #
+  def dump(self):
+
+    util.simon('===> DUMP COVER')
+    self.cover_dump()
+    self.metadata_exp()
+  #
+  def video_remove(self, message='STRIP VISUAL MEDIA [0:0]'):
+    '''Strip visual media (Cover-art) from an audio file.'''
+
+    if self.EXT.lower() == '.mp4': return 1, 'nothing to report', 'not going to erace video from a video.'
+
+    self.backup()
+    AV_CMD = ['ffmpeg', '-hide_banner', '-y',
+              '-i', self.TMPFILE,
+              '-c:a', 'copy', '-vn',
+              '-map', '0:0',
+              self.TGTFILE]
+
+    result = self.run(AV_CMD, message)
+    return result
+  #
+  def status(self):
+    util.simon("- has_file: ", str(os.path.exists(self.TGTFILE)))
+    util.simon("- has_temp: ", str(os.path.exists(self.TMPFILE)))
+    util.simon("- has_meta: ", str(os.path.exists(self.METFILE)))
+    util.simon("- has_pngi: ", str(os.path.exists(self.IMGFILE)))
+  #
+
+  def fix_id3v2(self, quick=False, msg='QUICK REWRITE ID3 v2.3 (FOR WINDOWS)'):
+    '''
+    Attempt to convert from newer id3 format (or whatever) to id3v2.3 (for windows shell image and id3 automation)
+
+    - dump-png
+    - dump-meta
+    - check-png (if none then quit)
+    - add the image (formatting id3 v2.3)
+    
+    `ffmpeg -hide_banner -y -i %OLDFILE% -i %IMGFILE% -c copy -map 0:0 -map 1:0 -id3v2_version 3 -metadata:s:v   "title=Album cover" -metadata:s:v "comment=Cover (Front)" %NEWFILE%`
+    '''
+    if quick:
+      # self.metadata_exp()
+      self.backup()
+      AV_CMD = ['ffmpeg', '-hide_banner', '-y', '-i', self.TMPFILE,
+                '-c', 'copy',
+                '-map', '0:0',
+                '-map', '1:0',
+                '-id3v2_version', '3',
+                '-metadata:s:v', 'title=Album cover',
+                '-metadata:s:v', 'comment=Cover (Front)',
+                self.TGTFILE]
+      result = self.run(AV_CMD, msg)
+      if result[0] == 1:
+        util.simon('DIDN\'T WORK!','\n',result[2])  
+        has_tmp = os.path.exists(self.TMPFILE)
+        has_tgt = os.path.exists(self.TGTFILE)
+        if (not has_tgt) and has_tmp:
+          util.simon('temp file left behind!', 'renaming...')
+          os.rename(self.TMPFILE,self.TGTFILE)
+      return result
+    
+    self.cover_dump()
+    self.metadata_exp()
+    
+    #self.metadata_rem()
+    time.sleep(2)
+    
+    has_i, has_t, has_m = os.path.exists(self.IMGFILE), os.path.exists(self.TGTFILE), os.path.exists(self.METFILE)
+    if has_i == False: sys.exit('MISSING IMAGE.')
+    if has_t == False: sys.exit('MISSING TARGET.')
+    if has_m == False: sys.exit('MISSING META.')
+
+    if (self.is_m4a() or self.is_mp3()):
+      result = self.video_remove()
+      if result[0] == 1: util.simon('ERROR')
+    
+    time.sleep(1)
+    self.backup()
+    AV_CMD=['ffmpeg', '-hide_banner', '-y', '-i', self.TMPFILE, '-i', self.IMGFILE , '-c', 'copy', '-map', '0:0', '-map', '1:0', '-id3v2_version', '3', '-metadata:s:v', 'title=Album cover', '-metadata:s:v', 'comment=Cover (Front)', self.TGTFILE]
+    result = self.run(AV_CMD, 'FIX ID3 adding COVER-IMAGE')
+    if result[0] == 1: util.simon('ERROR'); util.simon(result[2]); util.simon(*AV_CMD,is_cmd=True)
+    else:
+      self.remove_temp()
+      self.remove_image()
+      self.remove_meta()
+    
+    return result
+  #
+  def __init__(self, input):
+    MediaFile.__init__(self,input)
+
+class App:
+
+  # ArgumentParser arguments
+  args = None
+  INPUTFILE = None
+
+  def has_input(self):
+    return self.INPUTFILE != None
+
+  def get_ops(self):
+    global VERBOSE
+    global ID3V2
+    global GIF_NINDEX
+    global GIF_NFRAME
+    global GIF_SIZE
+    global GIF_FPSX
+
+    from argparse import ArgumentParser
+    parser = ArgumentParser(description=':)')
+
+    parser.add_argument('--verbose',    '-v', action='store_true', dest='verbose')
+    parser.add_argument('--ff-update',        action='store_true', dest='update',       help='Download/update FFmpeg')
+    parser.add_argument('--ff-check',         action='store_true', dest='check',        help='Download/update FFmpeg')
+
+    parser.add_argument('--gif',              action='store_true', dest='make_gif',     help='Imageio makes a nice GIF for us.')
+    parser.add_argument('--gif-iframe',       default=GIF_NINDEX,  dest='gif_nidx',     help='[see --gif] Number of indexes into the movie. DEFAULT={}'.format(GIF_NINDEX))
+    parser.add_argument('--gif-fcount',       default=GIF_NFRAME,  dest='gif_nlen',     help='[see --gif] Number of frames to grab at each index point. DEFAULT={}'.format(GIF_NFRAME))
+    parser.add_argument('--gif-size',         default=GIF_SIZE,    dest='gif_size',     help='[see --gif] Size of the produced GIF window.". DEFAULT={}'.format(GIF_SIZE))
+    parser.add_argument('--gif-fpsx',         default=GIF_FPSX,    dest='gif_fpsx',     help='[see --gif] A multiplier applied to the GIF FPS. DEFAULT={}'.format(GIF_FPSX))
+    parser.add_argument('--list-gif',         action='store_true', dest='find_gif',     help='[see --gif] Since we generate GIFs, lets try to find them all starting at a given path.')
+
+    parser.add_argument('--clean',            action='store_true', dest='clean',        default=False, help='DELETE cover and metadata IF EXIST.')
+    
+    parser.add_argument('--pix',              action='store_true', dest='pix',          default=False, help='EXPORT cover image with AtomicParsley (if present).')
+    parser.add_argument('--dump',       '-d', action='store_true', dest='dump',         default=False, help='EXPORT cover image and metadata.')
+    parser.add_argument('--cover',      '-c', action='store_true', dest='cover',        default=False, help='IMPORT [file]-cover[.ext].')
+    parser.add_argument('--cover-dump', '-C', action='store_true', dest='dump_cover',   default=False, help='EXPORT PNG cover image if one exists.')
+    parser.add_argument('--cover-rm', '-crm', action='store_true', dest='remove_cover', default=False, help='Remove cover [m4a, mp4] with AtomicParsley.')
+    parser.add_argument('--enima',     '-ae', action='store_true', dest='atomic_enima', default=False, help='Remove cover [m4a, mp4] with AtomicParsley.')
+    
+    parser.add_argument('--info',       '-i', action='store_true', dest='info',         default=False, help='PRINT FFmpeg info(s).')
+    parser.add_argument('--dump-meta',  '-M', action='store_true', dest='dump_meta',    default=False, help='Dump FFmpeg Metadat-info(s).')
+    parser.add_argument('--meta',       '-m', action='store_true', dest='meta',         default=False, help='IMPORT FFmpeg Metadat-info(s).')
+    
+    parser.add_argument('--id3v2',            action='store_true', help='Complete re-write of Metadata (DUMP) and Cover-art.  NOTE: This is for windows -id3v2 3')
+    parser.add_argument('--id3',              action='store_true', help='Override id3 v2.[x] (the \'x\') with 2.4 perhaps.')
+    
+    parser.add_argument('--audio',      '-a', action='store_true', help='Extract m4a audio from mp4 AV file with meta-data and cover-image.')
+    
+    parser.add_argument('file', nargs='*')
+
+    self.args = parser.parse_args()
+    
+    # ID3V2 = 3 if self.args.id3v == None else self.args.id3v
+
+    if self.args.verbose: VERBOSE = True
+    # no reason we splitted these, really.
+    if (self.args.file != None) and type(self.args.file) == list :
+      self.INPUTFILE = self.args.file
+    elif (self.args.file != None) and type(self.args.file) == str :
+      self.INPUTFILE = self.args.file
+    else:
+      parser.print_usage()
+      # util.simon('--> <ERR> expected input file.')
+    GIF_NINDEX = self.args.gif_nidx
+    GIF_NFRAME = self.args.gif_nlen
+    GIF_SIZE   = self.args.gif_size
+    GIF_FPSX   = self.args.gif_fpsx
+
+  def __init__(self):
+    self.get_ops()
+
+def go():
+  app = App()
+  if app.has_input():
+    ALL_MEDIA = []
+
+    # print('number of items sent in: {}'.format(len(ALL_MEDIA)))
+    # sys.exit(1)
+    if app.args.update:
+      download_ff()
+      print('?')
+      return
+
+    if app.args.find_gif:
+      if type(app.INPUTFILE) == list: find_gif(app.INPUTFILE[0])
+      else:
+        find_gif(app.INPUTFILE)
+      return
+      
+    if app.args.check:
+      download_table()
+      return
+
+    if type(app.INPUTFILE) == str:
+      ALL_MEDIA = [FFmpeg(app.INPUTFILE)]
+    if type(app.INPUTFILE) == list:
+      for F in app.INPUTFILE:
+        ALL_MEDIA.append(FFmpeg(F))
+
+    for media in ALL_MEDIA:
+
+      if not media.has_media:
+        sys.exit('input file does not exist')
+
+      # ////////////////////////////////////////////////////////
+      
+      print('processing: {}'.format(os.path.basename(media.TGTFILE)))
+      
+      # ////////////////////////////////////////////////////////
+      if app.args.make_gif:
+        media.imageio_gif()
+
+      if app.args.pix:
+        media.cover_dump_atomic()
+
+      elif app.args.clean:
+        media.clean()
+        
+      elif app.args.atomic_enima:
+        media.cover_remove_atomic_enima()
+        
+      elif app.args.remove_cover:
+        media.cover_atomic_unload()
+
+      elif app.args.dump:
+        media.dump()
+
+      elif app.args.audio:
+        media.m4a_dump()
+
+      elif app.args.dump_cover:
+        if media.cover_dump():
+          print('==> FAILED!')
+          print('--> performing cleanup')
+          os.remove(media.IMGFILE)
+
+      elif app.args.cover:
+        if media.is_mp4() or media.is_m4a():
+          media.cover_atomic_load()
+        else:
+          result = media.metadata_add(False,True,True)[0]
+          if result == 1:
+            print('==> FAILED!')
+            # print('--> performing cleanup')
+            # os.remove(media.IMGFILE)
+
+      elif app.args.info:
+        media.file_info()
+
+      elif app.args.dump_meta:
+        er, _, e = media.metadata_exp()
+        if er == 1: print(e)
+        else: print('===> WE GOOD!')
+
+      elif app.args.meta:
+        media.metadata_add()
+
+      elif app.args.id3v2:
+        if media.EXT.lower() == '.mp3': media.fix_id3v2()
+        else: util.simon('file extension not supported')
+
+if __name__ == '__main__': go()
+
