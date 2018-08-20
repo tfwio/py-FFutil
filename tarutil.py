@@ -1,5 +1,10 @@
 # !/usr/env/bash python3
+"""
+Most of the stuff in here is experimental.
 
+I've had success with creating a tar archive and perhaps untar
+-like methods but thats about it for the moment.
+"""
 import contextlib
 import lzma
 import os
@@ -17,6 +22,11 @@ except:
 __is_verbose__ = False
 __py_2x__ = sys.version_info[0] < 3
 __py_3x__ = not __py_2x__
+'''
+__refresh__ and __keep_archives__ are two variables which are separated
+in that one of them can be set during a function call (perhaps) while the
+other may be globally set using a command-line flag (in another script).
+'''
 __refresh__ = True # A value of True tells us to destroy prior dowload archives.
 __keep_archives__ = True
 __original_path__ = os.path.abspath('.')

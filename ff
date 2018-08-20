@@ -2,20 +2,13 @@
 # encoding: utf-8
 from __future__ import print_function
 
-# https://stackoverflow.com/questions/18862836/how-to-open-file-using-argparse#18863046
-
-# Style Guideline for Python Code [PEP 8]
-# https://www.python.org/dev/peps/pep-0008/
-
-
-# `python -m pip install requests`
-# indirectly installs: certifi chardet idna requests urllib3
-
 import os
 import shutil
 import subprocess
 import sys
 import time
+# `python -m pip install requests`
+# indirectly installs: certifi chardet idna requests urllib3
 try:
   import requests
 except:
@@ -26,6 +19,12 @@ try:
 except:
   print('imageio module not found, from a command-line shell, try:')
   sys.exit('python -m pip install imageio')
+# used in tarutil...
+# __refresh__ = True # A value of True tells us to destroy prior dowload archives.
+# __keep_archives__ = True
+# __original_path__ = os.path.abspath('.')
+from tarutil import *
+from fileutil import *
 
 # from regutil import *
 # from fileutil import *
@@ -46,7 +45,6 @@ FFMPEG_LATEST_WIN = 'https://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-lates
 # win64|win32, static|shared
 FFMPEG_ZERANOE_TABLE = 'https://ffmpeg.zeranoe.com/builds/{}/{}/ffmpeg-latest-{}-{}.zip'
 
-
 os.environ.update({'PATH': os.environ['PATH']+';'+BIN_FFMPEG_PATH})
 os.environ.update({'PATH': os.environ['PATH']+';'+BIN_ATOMICPARSLEY})
 
@@ -57,18 +55,7 @@ ID3V2     = 3
 
 # Tells the script to overwrite downloaded files if they exist
 
-'''
-__refresh__ and __keep_archives__ are two variables which are separated
-in that one of them can be set during a function call (perhaps) while the
-other may be globally set using a command-line flag (in another script).
-'''
 
-from tarutil import *
-# used in tarutil...
-# __refresh__ = True # A value of True tells us to destroy prior dowload archives.
-# __keep_archives__ = True
-# __original_path__ = os.path.abspath('.')
-from fileutil import *
 
 
 class dictify:
