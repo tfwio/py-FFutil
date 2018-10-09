@@ -3,8 +3,8 @@
 
 function go() {
   namen=${1%.*}
-  if [ -f "${namen}" ]; then sed -E 's/\: ?(list|str|int|bool)//g' < ./${namen} > ${namen}.py ; echo processing ${namen} '->' ${namen}.py
-  else sed -E 's/\: ?(list|str|int|bool)//g' < ./${namen}.py > ${namen}2.py ; echo processing ${namen}.py '->' ${namen}2.py
+  if [ -f "${namen}" ]; then sed -E 's/\: ?(list|str|int|bool|float)//g' < ./${namen} > ${namen}.py ; echo processing ${namen} '->' ${namen}.py
+  else sed -E 's/\: ?(list|str|int|bool|float)//g' < ./${namen}.py > ${namen}2.py ; echo processing ${namen}.py '->' ${namen}2.py
   fi
 }
 

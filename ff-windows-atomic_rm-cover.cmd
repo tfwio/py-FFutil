@@ -1,2 +1,2 @@
 @SET PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python36
-@python "%~dp0ff" -crm %*
+@python "%~dp0source/ff" -crm %*
