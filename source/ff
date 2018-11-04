@@ -35,10 +35,10 @@ GIF_SIZE          = '320x240'
 GIF_FPSX          = '0.5'
 
 # where we want to download ffmpeg
-BASE_FFMPEG_PATH  = r'C:\DEV\avcvt-utils'
-BIN_FFMPEG_PATH   = r'C:\DEV\avcvt-utils\ffmpeg-20180508-293a6e8-win64-static\bin'
+BASE_FFMPEG_PATH  = r'E:\dev\home\avcvt-utils'
+BIN_FFMPEG_PATH   = r'E:\dev\home\avcvt-utils\ffmpeg-20180508-293a6e8-win64-static\bin'
 
-BIN_ATOMICPARSLEY = r'C:\Users\xo\Desktop\youtube-dl-win\bin'
+BIN_ATOMICPARSLEY = r'E:\dev\tool\youtube-dl-win\bin'
 FFMPEG_ZERANOE    = 'https://ffmpeg.zeranoe.com/builds/{}/{}'
 FFMPEG_LATEST_WIN = 'https://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-latest-win64-static.zip'
 
@@ -68,6 +68,23 @@ class util:
   IMAGE_EXT = ['.jpg', '.png']
   
   @staticmethod
+  def try_decode(subprocess_output):
+    '''
+    attempts to error check conversion of a binary-stream to a string.
+
+    1. attempt to decode using utf-8
+    2. if .decode('utf-8') fails, return a string conversion on the buffer `str(buffer)`.
+
+    returns which ever result if of course `input != None`.
+    '''
+    output = subprocess_output
+    try:
+      if output != None: output = output.decode('utf-8')
+    except: # Exception as e
+      if output != None: output = str(output)
+    return output
+
+  @staticmethod
   def recall(args: list, stdin=None, stderr=subprocess.PIPE, stdout=subprocess.PIPE, env=os.environ):
     '''
     returns:
@@ -77,8 +94,8 @@ class util:
     p = subprocess.Popen(args, stdin=stdin, stderr=stderr, stdout=stdout, env=env)
     output, error = p.communicate()
     returncode = p.returncode
-    if output != None: output = output.decode('utf-8')
-    if error  != None: error = error.decode('utf-8')
+    if output != None: output = util.try_decode(output)
+    if error  != None: error = util.try_decode(error)
     return returncode, output, error
 
   @staticmethod
@@ -503,7 +520,11 @@ class FFmpeg(MediaFile):
       reader.close()
   # 
   def m4a_dump(self):
-    '''ffmpeg -hide_banner -y -i "%~nx1" -vn -c:a copy "%~dpn1.m4a'''
+    '''
+    attempt to dump m4a file from (.mp4) input
+
+    `ffmpeg -hide_banner -y -i "%~nx1" -vn -c:a copy "%~dpn1.m4a`
+    '''
     util.simon('==> EXTRACT M4A Audio from MP4 Video')
     
     # check file extension
