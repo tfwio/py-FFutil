@@ -794,7 +794,45 @@ class FFmpeg(MediaFile):
     util.simon("- has_meta: ", str(os.path.exists(self.METFILE)))
     util.simon("- has_pngi: ", str(os.path.exists(self.IMGFILE)))
   #
+  def fix_aspect(self, aspect="16:9", message='FIX ASPECT'):
+    '''
+    fix the aspect ratio of mp4 or avi file (in metadata).
 
+    Also dumps and attempts to rename and load a PNG file 'cover' image after the initial command.
+
+    original command: `ffmpeg -i "%~1" -vcodec copy -acodec copy -aspect "16:9" "%~dpn1-r16x9%~x1"`
+    '''
+    # self.backup() # we don't need a backup file since we're creating a new renamed file.
+
+    if self.EXT.lower() != '.mp4' and self.EXT.lower() != '.avi':
+      util.simon('ABORT => Expected .avi or .mp4 file as input! (got: {})'.format(self.EXT.lower()))
+      return
+
+    str_aspect_colon = aspect.replace('x', ':') # e.g. 16:9 (for FFmpeg)
+    str_aspect_x = str_aspect_colon.replace(
+        ':', 'x')  # e.g. 16x9 (for File-Name)
+    
+    OUT_FILE = self.TGTFILE.replace(self.EXT, '-{}{}'.format(str_aspect_x, self.EXT))
+    IN__CVER = self.TGTFILE.replace(self.EXT, '-cover.png')
+    OUT_CVER = OUT_FILE.replace(self.EXT, '-cover.png')
+
+    AV_CMD = [
+      'ffmpeg', '-hide_banner',
+      '-y', # overwrite
+      '-i', self.TGTFILE,
+      '-vcodec', 'copy',
+      '-acodec', 'copy',
+      '-aspect', str_aspect_colon,
+      OUT_FILE
+      ]
+    result = self.run(AV_CMD, message)
+
+    if self.cover_dump() and self.EXT.lower()=='.mp4':
+      os.rename(IN__CVER, OUT_CVER)
+      new_media = FFmpeg(OUT_FILE)
+      new_media.cover_load()
+      new_media.remove_image()
+  #
   def fix_id3v2(self, quick=False, msg='QUICK REWRITE ID3 v2.3 (FOR WINDOWS)'):
     '''
     Attempt to convert from newer id3 format (or whatever) to id3v2.3 (for windows shell image and id3 automation)
@@ -904,6 +942,10 @@ class App:
     parser.add_argument('--id3v2',            action='store_true', help='Complete re-write of Metadata (DUMP) and Cover-art.  NOTE: This is for windows -id3v2 3')
     parser.add_argument('--id3',              action='store_true', help='Override id3 v2.[x] (the \'x\') with 2.4 perhaps.')
     
+    parser.add_argument('--aspect-16x9',      action='store_true', dest='aspect_16x9', help='Fix aspect-ratio as 16x9. Note: some players will ignore the metadata setting and show the video in its native pixel-aspect.')
+    parser.add_argument('--aspect-9x4',       action='store_true', dest='aspect_9x4', help='Fix aspect-ratio as 9x4. Note: some players will ignore the metadata setting and show the video in its native pixel-aspect.')
+    parser.add_argument('--aspect-4x3',       action='store_true', dest='aspect_4x3', help='Fix aspect-ratio as 4x3 (NSTC/PAL?). Note: some players will ignore the metadata setting and show the video in its native pixel-aspect.')
+    
     parser.add_argument('--audio',      '-a', action='store_true', help='Extract m4a audio from mp4 AV file with meta-data and cover-image.')
     
     parser.add_argument('file', nargs='*')
@@ -967,6 +1009,10 @@ def go():
       print('processing: {}'.format(os.path.basename(media.TGTFILE)))
       
       # ////////////////////////////////////////////////////////
+      if app.args.aspect_16x9: media.fix_aspect('16x9')
+      if app.args.aspect_9x4:  media.fix_aspect('9x4')
+      if app.args.aspect_4x3:  media.fix_aspect('4x3')
+
       if app.args.make_gif:
         media.imageio_gif()
 
