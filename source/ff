@@ -518,6 +518,126 @@ class FFmpeg(MediaFile):
           sys.stderr.write('|\n')
         writer.close()
       reader.close()
+
+  def imageio_vid_info(self, **parax):
+    '''
+    Get some general info about a video such as
+
+    - frame count
+    - window size
+
+    '''
+    import PIL
+    import numpy as np
+    
+    result = {}
+    mul = 4.0
+    with imageio.get_reader(self.TGTFILE, output_params=parax) as reader:
+      
+      result.update(reader.get_meta_data())
+      
+      with imageio.get_writer(self.GIFFILE, fps=result['fps']/mul, mode='I') as writer:
+
+        frame_index, frame_mod, frame_zod = 0, 0, 10
+        while frame_index < result['nframes']:
+
+          m_data = reader.get_data(frame_index)
+
+          img = PIL.Image.fromarray(m_data, 'RGB')
+          img.thumbnail(result['source_size'], PIL.Image.LANCZOS)
+          img = np.asarray(img)
+          
+          writer.append_data(img)
+          
+          frame_mod = frame_index % frame_zod
+          if frame_mod == 0:
+            sys.stderr.write('+')
+            sys.stderr.flush()
+
+          frame_index += int(mul)
+      
+      writer.close()
+      reader.close()
+
+
+
+    print(result)
+    return result
+
+  def imageio_gif_direct(self, **parax):
+    '''
+    https://imageio.readthedocs.io/en/stable/format_ffmpeg.html#ffmpeg
+
+    param: frame_c
+      the total number of frame index points
+
+    param: frame_z
+      the number of frames to grab at each index point
+
+    param: size
+      size of the exported GIF window
+
+    param: fps_mul
+      multiplier against framerate.
+      By default we use a value of 0.5 to slow down playback.
+    '''
+
+    import PIL
+    import numpy as np
+
+    frame_c = int(GIF_NINDEX) if not 'frame_c' in parax else parax['frame_c']
+    frame_z = int(GIF_NFRAME) if not 'frame_z' in parax else parax['frame_z']
+    
+    size    = util.str2ple(GIF_SIZE)  if not 'size' in parax else parax['size']
+
+    fps_mul = float(GIF_FPSX) if not 'fps_mul' in parax else parax['fps_mul']
+    
+    # duration=0.225
+
+    r = self.calc_frames(frame_c=frame_c)
+    
+    util.simon('=> frames:  {}'.format(r.nframes))
+    util.simon('=> fps:     {}'.format(r.fps))
+    util.simon('=> size:    {}'.format(r.size))
+    util.simon('=> skip:    {}'.format(r.fs))
+    util.simon('-----------')
+    util.simon('=> index:   {}'.format(frame_c))
+    util.simon('=> frames:  {}'.format(frame_z))
+    util.simon('=> total:   {}'.format(frame_c * frame_z))
+    util.simon('=> seconds: {}'.format((frame_c * frame_z)/r.fps))
+
+    x_params = None  # ,setpts=N/30/TB # x_params = ['-vf', 'select=\'not(mod(n,{}))\''.format(fs)]  # ,setpts=N/30/TB
+
+    # Gather index points
+    my_range = []
+    for x in range(0, frame_c):
+      my_range.append(int(r.fs * (x + 1)))
+    
+    with imageio.get_reader(self.TGTFILE, output_params=x_params) as reader:
+      with imageio.get_writer(self.GIFFILE, fps=r.fps * fps_mul, mode='I') as writer: # , duration=duration
+        for i, x in enumerate(my_range):
+          
+          if x >= r.nframes: break
+
+          sys.stderr.write('+ index: {:.>3} |'.format(i+1))
+          # img = reader.get_data(x); sys.stderr.write('; GOT')
+          try:
+            z = x-frame_c
+            for y in range(z, z+frame_z):
+              if y >= r.nframes: break
+              m_data = reader.get_data(y)
+              img = PIL.Image.fromarray(m_data, 'RGB')
+              img.thumbnail(size, PIL.Image.LANCZOS)
+              img = np.asarray(img)
+              writer.append_data(img)
+              sys.stderr.write('+')
+              sys.stderr.flush()
+          except Exception as e:
+            raise Exception('EXCEPTION[{}]: {}'.format(y, e))
+            # print('EXCEPTION: {}'.format(e), file=sys.stderr)
+          sys.stderr.write('|\n')
+        writer.close()
+      reader.close()
   # 
   def m4a_dump(self):
     '''
@@ -928,6 +1048,8 @@ class App:
 
     parser.add_argument('--clean',            action='store_true', dest='clean',        default=False, help='DELETE cover and metadata IF EXIST.')
     
+    parser.add_argument('--FFnfo',            action='store_true', dest='FFnfo',        default=False, help="Show some information about a video file.")
+
     parser.add_argument('--pix',              action='store_true', dest='pix',          default=False, help='EXPORT cover image with AtomicParsley (if present).')
     parser.add_argument('--dump',       '-d', action='store_true', dest='dump',         default=False, help='EXPORT cover image and metadata.')
     parser.add_argument('--cover',      '-c', action='store_true', dest='cover',        default=False, help='IMPORT [file]-cover[.ext].')
@@ -1012,6 +1134,9 @@ def go():
       if app.args.aspect_16x9: media.fix_aspect('16x9')
       if app.args.aspect_9x4:  media.fix_aspect('9x4')
       if app.args.aspect_4x3:  media.fix_aspect('4x3')
+      
+      if app.args.FFnfo:
+        media.imageio_vid_info()
 
       if app.args.make_gif:
         media.imageio_gif()
