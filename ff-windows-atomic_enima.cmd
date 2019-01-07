@@ -1,3 +1,3 @@
-@SET PATH=%PATH%;%LOCALAPPDATA%\Programs\Python\Python36
-@python "%~dp0source/ff" -ae %*
+@ECHO OFF
+CALL %~dp0python-bin.cmd
 ECHO %ERRORLEVEL%
