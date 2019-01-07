@@ -3,7 +3,12 @@ PyFFutil
 
 FFmpeg and AtomicParsley utility functions wrapped into a python script.
 
-- requires FFmpeg.exe and AtomicParsley executables somewhere on ENVIRONMENT PATH to work.
+required libs:
+```bash
+python -m pip install imageio
+python -m pip install requests
+```
+
 - \_O\_o\_ if theres no *.cmd for the flag, I'm not sure if it works.
 - couldn't be too much work to adapt this to \*nix or mac but I don't have either.
 - don't think `--ff-update` \&| `--ff-check` options work...  
@@ -23,14 +28,6 @@ feel free to bugreport any issue you'd like resolved or clarified!
 
 license: do as you will with it
 
-DEPENDENCIES (external ones)
---------------------
-
-you know, from PIL...
-
-- requests
-- imageio (for making GIFs from movies)
-
 Example Help Output
 ----------------------
 
@@ -39,8 +36,9 @@ $ ./source/ff --help
 usage: ff [-h] [--verbose] [--ff-update] [--ff-check] [--gif]
           [--gif-iframe GIF_NIDX] [--gif-fcount GIF_NLEN]
           [--gif-size GIF_SIZE] [--gif-fpsx GIF_FPSX] [--list-gif] [--clean]
-          [--pix] [--dump] [--cover] [--cover-dump] [--cover-rm] [--enima]
-          [--info] [--dump-meta] [--meta] [--id3v2] [--id3] [--audio]
+          [--FFnfo] [--pix] [--dump] [--cover] [--cover-dump] [--cover-rm]
+          [--enima] [--info] [--dump-meta] [--meta] [--id3v2] [--id3]
+          [--aspect-16x9] [--aspect-9x4] [--aspect-4x3] [--audio]
           [file [file ...]]
 
 :)
@@ -67,6 +65,7 @@ optional arguments:
   --list-gif            [see --gif] Since we generate GIFs, lets try to find
                         them all starting at a given path.
   --clean               DELETE cover and metadata IF EXIST.
+  --FFnfo               Show some information about a video file.
   --pix                 EXPORT cover image with AtomicParsley (if present).
   --dump, -d            EXPORT cover image and metadata.
   --cover, -c           IMPORT [file]-cover[.ext].
@@ -79,6 +78,15 @@ optional arguments:
   --id3v2               Complete re-write of Metadata (DUMP) and Cover-art.
                         NOTE: This is for windows -id3v2 3
   --id3                 Override id3 v2.[x] (the 'x') with 2.4 perhaps.
+  --aspect-16x9         Fix aspect-ratio as 16x9. Note: some players will
+                        ignore the metadata setting and show the video in its
+                        native pixel-aspect.
+  --aspect-9x4          Fix aspect-ratio as 9x4. Note: some players will
+                        ignore the metadata setting and show the video in its
+                        native pixel-aspect.
+  --aspect-4x3          Fix aspect-ratio as 4x3 (NSTC/PAL?). Note: some
+                        players will ignore the metadata setting and show the
+                        video in its native pixel-aspect.
   --audio, -a           Extract m4a audio from mp4 AV file with meta-data and
                         cover-image.
 ```
